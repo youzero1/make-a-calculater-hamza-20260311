@@ -1,0 +1,208 @@
+'(') {
+    pos.index++; // skip '('
+    const result = parseExpression(tokens, pos);
+    if (
+      pos.index >= tokens.length ||
+      tokens[pos.index].type !== 'paren' ||
+      tokens[pos.index].value !== ')'
+    ) {
+      throw new Error('Mismatched parentheses');
+    }
+    pos.index++; // skip ')'
+    return result;
+  }
+
+  throw new Error(`Unexpected token: ${JSON.stringify(token)}`);
+}
+
+export function evaluate(expression: string): number {
+  if (!expression || expression.trim() === '') {
+    throw new Error('Empty expression');
+  }
+
+  const tokens = tokenize(expression);
+  if (tokens.length === 0) {
+    throw new Error('Empty expression');
+  }
+
+  const pos = { index: 0 };
+  const result = parseExpression(tokens, pos);
+
+  if (pos.index < tokens.length) {
+    throw new Error('Unexpected tokens after expression');
+  }
+
+  if (!isFinite(result)) {
+    throw new Error('Result is not finite');
+  }
+
+  return result;
+}
+
+/**
+ * Format a number for display, removing unnecessary trailing zeros.
+ */
+export function formatResult(num: number): string {
+  if (Number.isInteger(num)) {
+    return num.toString();
+  }
+  // Limit to 10 decimal places and remove trailing zeros
+  return parseFloat(num.toFixed(10)).toString();
+}
+</file>
+
+<file path="src/components/Display.tsx">
+'use client';
+
+import React from 'react';
+
+interface DisplayProps {
+  expression: string;
+  result: string;
+}
+
+const Display: React.FC<DisplayProps> = ({ expression, result }) => {
+  return (
+    <div className="bg-gray-900 rounded-2xl p-5 mb-4 min-h-[120px] flex flex-col justify-end text-right shadow-inner">
+      <div
+        className="text-gray-400 text-sm font-mono mb-2 min-h-[20px] break-all overflow-hidden"
+        data-testid="display-expression"
+      >
+        {expression || '\u00A0'}
+      </div>
+      <div
+        className="text-white text-4xl font-bold font-mono break-all overflow-hidden"
+        data-testid="display-result"
+      >
+        {result || '0'}
+      </div>
+    </div>
+  );
+};
+
+export default Display;
+</file>
+
+<file path="src/components/Button.tsx">
+'use client';
+
+import React from 'react';
+
+interface ButtonProps {
+  label: string;
+  onClick: () => void;
+  variant?: 'default' | 'operator' | 'equals' | 'clear' | 'wide';
+  className?: string;
+}
+
+const variantStyles: Record<string, string> = {
+  default:
+    'bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white',
+  operator:
+    'bg-amber-600 hover:bg-amber-500 active:bg-amber-400 text-white',
+  equals:
+    'bg-green-600 hover:bg-green-500 active:bg-green-400 text-white',
+  clear:
+    'bg-red-600 hover:bg-red-500 active:bg-red-400 text-white',
+  wide:
+    'bg-gray-700 hover:bg-gray-600 active:bg-gray-500 text-white col-span-2',
+};
+
+const Button: React.FC<ButtonProps> = ({
+  label,
+  onClick,
+  variant = 'default',
+  className = '',
+}) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        rounded-xl text-xl font-semibold py-4 px-2
+        transition-all duration-100 ease-in-out
+        shadow-md active:shadow-sm active:translate-y-0.5
+        select-none cursor-pointer
+        ${variantStyles[variant] || variantStyles.default}
+        ${className}
+      `}
+      data-testid={`btn-${label}`}
+    >
+      {label}
+    </button>
+  );
+};
+
+export default Button;
+</file>
+
+<file path="src/components/Calculator.tsx">
+'use client';
+
+import React, { useState, useCallback } from 'react';
+import Display from './Display';
+import Button from './Button';
+import { evaluate, formatResult } from '@/lib/calculator';
+import Link from 'next/link';
+
+type ButtonConfig = {
+  label: string;
+  variant?: 'default' | 'operator' | 'equals' | 'clear' | 'wide';
+  action: string;
+};
+
+const buttons: ButtonConfig[][] = [
+  [
+    { label: 'C', variant: 'clear', action: 'clear' },
+    { label: '(', variant: 'default', action: 'input' },
+    { label: ')', variant: 'default', action: 'input' },
+    { label: '÷', variant: 'operator', action: 'input' },
+  ],
+  [
+    { label: '7', action: 'input' },
+    { label: '8', action: 'input' },
+    { label: '9', action: 'input' },
+    { label: '×', variant: 'operator', action: 'input' },
+  ],
+  [
+    { label: '4', action: 'input' },
+    { label: '5', action: 'input' },
+    { label: '6', action: 'input' },
+    { label: '-', variant: 'operator', action: 'input' },
+  ],
+  [
+    { label: '1', action: 'input' },
+    { label: '2', action: 'input' },
+    { label: '3', action: 'input' },
+    { label: '+', variant: 'operator', action: 'input' },
+  ],
+  [
+    { label: '0', variant: 'wide', action: 'input' },
+    { label: '.', action: 'input' },
+    { label: '=', variant: 'equals', action: 'equals' },
+  ],
+];
+
+const Calculator: React.FC = () => {
+  const [expression, setExpression] = useState('');
+  const [displayResult, setDisplayResult] = useState('0');
+  const [hasResult, setHasResult] = useState(false);
+
+  const saveCalculation = useCallback(
+    async (expr: string, result: string) => {
+      try {
+        await fetch('/api/calculations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ expression: expr, result }),
+        });
+      } catch (error) {
+        console.error('Failed to save calculation:', error);
+      }
+    },
+    []
+  );
+
+  const handleInput = useCallback(
+    (label: string) => {
+      // Map display symbols to actual operators
+      const mapped = label
