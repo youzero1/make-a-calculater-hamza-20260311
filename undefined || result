@@ -1,0 +1,316 @@
+null) {
+      return NextResponse.json(
+        { error: 'Expression and result are required' },
+        { status: 400 }
+      );
+    }
+
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Calculation);
+
+    const calculation = repo.create({
+      expression: String(expression),
+      result: String(result),
+    });
+
+    const saved = await repo.save(calculation);
+    return NextResponse.json({ calculation: saved }, { status: 201 });
+  } catch (error) {
+    console.error('Error saving calculation:', error);
+    return NextResponse.json(
+      { error: 'Failed to save calculation' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE() {
+  try {
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Calculation);
+    await repo.clear();
+    return NextResponse.json({ message: 'History cleared successfully' });
+  } catch (error) {
+    console.error('Error clearing history:', error);
+    return NextResponse.json(
+      { error: 'Failed to clear history' },
+      { status: 500 }
+    );
+  }
+}
+</file>
+
+<file path="Dockerfile">
+# Stage 1: Install dependencies
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json ./
+RUN npm install --legacy-peer-deps
+
+# Stage 2: Build the application
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Create data directory for SQLite
+RUN mkdir -p /app/data
+
+RUN npm run build
+
+# Stage 3: Production runner
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV DATABASE_PATH=/app/data/calculator.db
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy necessary files
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+
+# Create data directory and set permissions
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "server.js"]
+</file>
+
+<file path="docker-compose.yml">
+version: '3.8'
+
+services:
+  calculator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/calculator.db
+    volumes:
+      - calculator-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  calculator-data:
+</file>
+
+<file path="src/__tests__/calculator.test.ts">
+import { evaluate, formatResult } from '@/lib/calculator';
+
+describe('evaluate', () => {
+  // Basic operations
+  test('addition', () => {
+    expect(evaluate('2+3')).toBe(5);
+  });
+
+  test('subtraction', () => {
+    expect(evaluate('10-4')).toBe(6);
+  });
+
+  test('multiplication', () => {
+    expect(evaluate('3*7')).toBe(21);
+  });
+
+  test('division', () => {
+    expect(evaluate('20/4')).toBe(5);
+  });
+
+  // Operator precedence
+  test('multiplication before addition', () => {
+    expect(evaluate('2+3*4')).toBe(14);
+  });
+
+  test('division before subtraction', () => {
+    expect(evaluate('10-6/2')).toBe(7);
+  });
+
+  test('complex precedence', () => {
+    expect(evaluate('2+3*4-6/2')).toBe(11);
+  });
+
+  // Parentheses
+  test('parentheses override precedence', () => {
+    expect(evaluate('(2+3)*4')).toBe(20);
+  });
+
+  test('nested parentheses', () => {
+    expect(evaluate('((2+3))*4')).toBe(20);
+  });
+
+  test('complex parentheses', () => {
+    expect(evaluate('(2+3)*(4-1)')).toBe(15);
+  });
+
+  // Decimal numbers
+  test('decimal addition', () => {
+    expect(evaluate('1.5+2.5')).toBe(4);
+  });
+
+  test('decimal multiplication', () => {
+    expect(evaluate('0.1*10')).toBeCloseTo(1);
+  });
+
+  // Negative numbers
+  test('negative number at start', () => {
+    expect(evaluate('-5+3')).toBe(-2);
+  });
+
+  test('negative result', () => {
+    expect(evaluate('3-10')).toBe(-7);
+  });
+
+  // Edge cases
+  test('single number', () => {
+    expect(evaluate('42')).toBe(42);
+  });
+
+  test('expression with spaces', () => {
+    expect(evaluate(' 2 + 3 ')).toBe(5);
+  });
+
+  // Error cases
+  test('empty expression throws', () => {
+    expect(() => evaluate('')).toThrow('Empty expression');
+  });
+
+  test('division by zero throws', () => {
+    expect(() => evaluate('1/0')).toThrow('Division by zero');
+  });
+
+  test('invalid characters throw', () => {
+    expect(() => evaluate('2+abc')).toThrow();
+  });
+
+  test('mismatched parentheses throw', () => {
+    expect(() => evaluate('(2+3')).toThrow();
+  });
+
+  // Larger expressions
+  test('chained operations', () => {
+    expect(evaluate('1+2+3+4+5')).toBe(15);
+  });
+
+  test('mixed operations', () => {
+    expect(evaluate('10/2+3*4-5')).toBe(12);
+  });
+});
+
+describe('formatResult', () => {
+  test('formats integer', () => {
+    expect(formatResult(42)).toBe('42');
+  });
+
+  test('formats decimal', () => {
+    expect(formatResult(3.14)).toBe('3.14');
+  });
+
+  test('formats zero', () => {
+    expect(formatResult(0)).toBe('0');
+  });
+
+  test('removes trailing zeros', () => {
+    expect(formatResult(1.5000)).toBe('1.5');
+  });
+
+  test('formats negative number', () => {
+    expect(formatResult(-7)).toBe('-7');
+  });
+
+  test('formats negative decimal', () => {
+    expect(formatResult(-3.14)).toBe('-3.14');
+  });
+
+  test('limits decimal places', () => {
+    const result = formatResult(1 / 3);
+    expect(result).toBe('0.3333333333');
+  });
+});
+</file>
+
+<file path="src/__tests__/components.test.tsx">
+/**
+ * @jest-environment jsdom
+ */
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import Display from '@/components/Display';
+import Button from '@/components/Button';
+
+describe('Display component', () => {
+  test('renders expression and result', () => {
+    render(<Display expression="2+3" result="5" />);
+    expect(screen.getByTestId('display-expression')).toHaveTextContent('2+3');
+    expect(screen.getByTestId('display-result')).toHaveTextContent('5');
+  });
+
+  test('renders default result when empty', () => {
+    render(<Display expression="" result="" />);
+    expect(screen.getByTestId('display-result')).toHaveTextContent('0');
+  });
+
+  test('renders expression with special characters', () => {
+    render(<Display expression="10÷2×3" result="15" />);
+    expect(screen.getByTestId('display-expression')).toHaveTextContent('10÷2×3');
+    expect(screen.getByTestId('display-result')).toHaveTextContent('15');
+  });
+});
+
+describe('Button component', () => {
+  test('renders button with label', () => {
+    render(<Button label="7" onClick={() => {}} />);
+    expect(screen.getByTestId('btn-7')).toHaveTextContent('7');
+  });
+
+  test('calls onClick when clicked', () => {
+    const handleClick = jest.fn();
+    render(<Button label="5" onClick={handleClick} />);
+    fireEvent.click(screen.getByTestId('btn-5'));
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  test('renders with operator variant', () => {
+    render(<Button label="+" onClick={() => {}} variant="operator" />);
+    const button = screen.getByTestId('btn-+');
+    expect(button).toBeInTheDocument();
+  });
+
+  test('renders with equals variant', () => {
+    render(<Button label="=" onClick={() => {}} variant="equals" />);
+    const button = screen.getByTestId('btn-=');
+    expect(button).toBeInTheDocument();
+  });
+
+  test('renders with clear variant', () => {
+    render(<Button label="C" onClick={() => {}} variant="clear" />);
+    const button = screen.getByTestId('btn-C');
+    expect(button).toBeInTheDocument();
+  });
+});
+</file>
+
+Now let me also verify the next.config is compatible. For Next.js 14.2.3, `serverExternalPackages` might still be under `experimental`. Let me check and use the safe approach:
+
+<file path="next.config.ts">
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  output: 'standalone',
+  experimental: {
+    serverComponentsExternalPackages: ['typeorm', 'better-
