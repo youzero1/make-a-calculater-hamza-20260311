@@ -1,0 +1,41 @@
+')') {
+      tokens.push({ type: 'paren', value: ch });
+      i++;
+      continue;
+    }
+
+    // Handle percentage
+    if (ch === '%') {
+      // Convert last number to percentage
+      if (tokens.length > 0 && tokens[tokens.length - 1].type === 'number') {
+        const last = tokens.pop()!;
+        tokens.push({ type: 'number', value: (last as { type: 'number'; value: number }).value / 100 });
+      }
+      i++;
+      continue;
+    }
+
+    throw new Error(`Unexpected character: ${ch}`);
+  }
+
+  return tokens;
+}
+
+function isDigit(ch: string): boolean {
+  return ch >= '0' && ch <= '9';
+}
+
+/**
+ * Recursive descent parser implementing proper operator precedence.
+ * Grammar:
+ *   expression = term (('+' | '-') term)*
+ *   term       = factor (('*' | '/') factor)*
+ *   factor     = NUMBER | '(' expression ')'
+ */
+function parseExpression(tokens: Token[], pos: { index: number }): number {
+  let left = parseTerm(tokens, pos);
+
+  while (
+    pos.index < tokens.length &&
+    tokens[pos.index].type === 'operator' &&
+    (tokens[pos.index].value
