@@ -1,0 +1,131 @@
+'×' ? '*' : label;
+
+      if (hasResult) {
+        // If we just got a result and user types a number, start fresh
+        const isOperator = ['+', '-', '*', '/'].includes(mapped);
+        if (isOperator) {
+          setExpression((prev) => prev + mapped);
+          setHasResult(false);
+        } else {
+          setExpression(mapped);
+          setDisplayResult('0');
+          setHasResult(false);
+        }
+        return;
+      }
+
+      setExpression((prev) => prev + mapped);
+    },
+    [hasResult]
+  );
+
+  const handleClear = useCallback(() => {
+    setExpression('');
+    setDisplayResult('0');
+    setHasResult(false);
+  }, []);
+
+  const handleEquals = useCallback(() => {
+    if (!expression.trim()) return;
+
+    try {
+      const result = evaluate(expression);
+      const formatted = formatResult(result);
+      setDisplayResult(formatted);
+      setHasResult(true);
+
+      // Save to database
+      const displayExpr = expression
+        .replace(/\//g, '÷')
+        .replace(/\*/g, '×');
+      saveCalculation(displayExpr, formatted);
+    } catch {
+      setDisplayResult('Error');
+      setHasResult(true);
+    }
+  }, [expression, saveCalculation]);
+
+  const handleButtonClick = useCallback(
+    (btn: ButtonConfig) => {
+      switch (btn.action) {
+        case 'clear':
+          handleClear();
+          break;
+        case 'equals':
+          handleEquals();
+          break;
+        case 'input':
+          handleInput(btn.label);
+          break;
+      }
+    },
+    [handleClear, handleEquals, handleInput]
+  );
+
+  // Format expression for display (show nice symbols)
+  const displayExpression = expression
+    .replace(/\//g, '÷')
+    .replace(/\*/g, '×');
+
+  return (
+    <div className="w-full max-w-sm">
+      <div className="bg-gray-800 rounded-3xl p-4 shadow-2xl border border-gray-700">
+        <Display expression={displayExpression} result={displayResult} />
+
+        <div className="grid grid-cols-4 gap-2">
+          {buttons.map((row, rowIndex) =>
+            row.map((btn) => (
+              <Button
+                key={`${rowIndex}-${btn.label}`}
+                label={btn.label}
+                variant={btn.variant}
+                onClick={() => handleButtonClick(btn)}
+              />
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="text-center mt-6">
+        <Link
+          href="/history"
+          className="text-amber-400 hover:text-amber-300 text-sm underline transition-colors"
+        >
+          📋 View Calculation History
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+export default Calculator;
+</file>
+
+<file path="src/app/api/calculations/route.ts">
+import { NextRequest, NextResponse } from 'next/server';
+import { getDataSource } from '@/lib/database';
+import { Calculation } from '@/entities/Calculation';
+
+export async function GET() {
+  try {
+    const ds = await getDataSource();
+    const repo = ds.getRepository(Calculation);
+    const calculations = await repo.find({
+      order: { createdAt: 'DESC' },
+    });
+    return NextResponse.json({ calculations });
+  } catch (error) {
+    console.error('Error fetching calculations:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch calculations' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { expression, result } = body;
+
+    if (!expression || result
