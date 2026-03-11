@@ -1,0 +1,38 @@
+'/') {
+      // Handle unary minus/plus
+      if (
+        ch === '-' &&
+        (tokens.length === 0 ||
+          tokens[tokens.length - 1].type === 'operator' ||
+          (tokens[tokens.length - 1].type === 'paren' &&
+            tokens[tokens.length - 1].value === '('))
+      ) {
+        // Unary minus: read the number
+        i++;
+        let num = '-';
+        while (i < expr.length && (isDigit(expr[i]) || expr[i] === '.')) {
+          num += expr[i];
+          i++;
+        }
+        // Could also be -(expr), handle just negative number for now
+        if (num === '-') {
+          // It's a minus before a parenthesis like -(...)
+          tokens.push({ type: 'number', value: -1 });
+          tokens.push({ type: 'operator', value: '*' });
+          continue;
+        }
+        const parsed = parseFloat(num);
+        if (isNaN(parsed)) {
+          throw new Error(`Invalid number: ${num}`);
+        }
+        tokens.push({ type: 'number', value: parsed });
+        continue;
+      }
+
+      tokens.push({ type: 'operator', value: ch });
+      i++;
+      continue;
+    }
+
+    // Handle parentheses
+    if (ch
